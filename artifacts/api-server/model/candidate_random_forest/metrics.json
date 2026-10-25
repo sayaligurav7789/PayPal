@@ -1,0 +1,26 @@
+{
+  "status": "ready",
+  "modelName": "StandardScaler + SMOTE + RandomForestClassifier",
+  "threshold": 0.6,
+  "dataset": "OpenML 42175 mirror of Kaggle mlg-ulb/creditcardfraud",
+  "datasetRows": 284807,
+  "fraudRows": 492,
+  "trainRows": 227845,
+  "testRows": 56962,
+  "precision": 0.9069767441860465,
+  "recall": 0.7959183673469388,
+  "f1Score": 0.8478260869565217,
+  "confusionMatrix": {
+    "trueNegative": 56856,
+    "falsePositive": 8,
+    "falseNegative": 20,
+    "truePositive": 78
+  },
+  "splitMethod": "Stratified 80/20 split; random_state=42",
+  "smoteAppliedTo": "Training data only",
+  "riskThresholds": {
+    "medium": 0.3,
+    "high": 0.7
+  },
+  "message": "Candidate model evaluated on the stratified holdout. Not a production payment-risk evaluation."
+}

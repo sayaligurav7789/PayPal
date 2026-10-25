@@ -1,0 +1,255 @@
+from __future__ import annotations
+
+import gzip
+import json
+from pathlib import Path
+from typing import Literal
+
+import joblib
+import pandas as pd
+from fastapi import FastAPI, HTTPException, Query
+from pydantic import BaseModel, ConfigDict, Field
+
+
+MODEL_DIR = Path(__file__).resolve().parent
+ASSET_DIR = MODEL_DIR / "assets"
+CANDIDATE_DIR = MODEL_DIR / "candidate_random_forest"
+
+METRICS_PATH = CANDIDATE_DIR / "metrics.json"
+MODEL_PATH = CANDIDATE_DIR / "model.joblib"
+TRANSACTIONS_PATH = CANDIDATE_DIR / "test_transactions.jsonl.gz"
+PCA_FEATURES = [f"V{index}" for index in range(1, 29)]
+FEATURE_COLUMNS = ["Time", *PCA_FEATURES, "Amount"]
+
+app = FastAPI(
+    title="FraudShield Model API",
+    description=(
+        "Academic prototype inference using the Kaggle ULB credit-card fraud "
+        "benchmark. Not PayPal Fraud Protection Advanced."
+    ),
+    version="1.0.0",
+    docs_url="/model-api/docs",
+    openapi_url="/model-api/openapi.json",
+    redoc_url=None,
+)
+
+metrics: dict = {}
+model = None
+transactions: list[dict] = []
+transactions_by_id: dict[str, dict] = {}
+
+
+def load_assets() -> None:
+    global metrics, model, transactions, transactions_by_id
+    if METRICS_PATH.is_file():
+        metrics = json.loads(METRICS_PATH.read_text(encoding="utf-8"))
+    if MODEL_PATH.is_file():
+        model = joblib.load(MODEL_PATH)
+    if TRANSACTIONS_PATH.is_file():
+        with gzip.open(TRANSACTIONS_PATH, "rt", encoding="utf-8") as source:
+            transactions = [json.loads(line) for line in source if line.strip()]
+        transactions_by_id = {item["id"]: item for item in transactions}
+
+
+load_assets()
+
+
+class ScoreInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    transactionId: str | None = None
+    time: float = Field(ge=0)
+    amount: float = Field(ge=0)
+    features: dict[str, float]
+
+
+class AlertCandidate(BaseModel):
+    id: str
+    transactionId: str
+    risk: Literal["Low", "Medium", "High"]
+    amount: float
+    fraudProbability: float
+
+
+def unavailable_metrics() -> dict:
+    return {
+        "status": "unavailable",
+        "dataset": "OpenML 42175 mirror of Kaggle mlg-ulb/creditcardfraud",
+        "datasetRows": None,
+        "fraudRows": None,
+        "testRows": None,
+        "trainRows": None,
+        "precision": None,
+        "recall": None,
+        "f1Score": None,
+        "confusionMatrix": None,
+        "splitMethod": None,
+        "smoteAppliedTo": None,
+        "threshold": None,
+        "modelName": None,
+        "message": (
+            "No verified training artifact is available. Run fetch_dataset.py "
+            "and train.py; metrics and scores are intentionally omitted."
+        ),
+    }
+
+
+def risk_for(probability: float) -> str:
+    high = float(metrics.get("riskThresholds", {}).get("high", 0.7))
+    medium = float(metrics.get("riskThresholds", {}).get("medium", 0.3))
+    if probability >= high:
+        return "High"
+    if probability >= medium:
+        return "Medium"
+    return "Low"
+
+
+@app.get("/model-api/healthz")
+def healthz() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@app.get("/model-api/metrics")
+def get_metrics() -> dict:
+    return metrics if metrics else unavailable_metrics()
+
+
+@app.get("/model-api/transactions")
+def list_transactions(
+    page: int = Query(default=1, ge=1),
+    pageSize: int = Query(default=25, ge=1, le=100),
+    risk: Literal["Low", "Medium", "High"] | None = None,
+    actualFraud: bool | None = None,
+    search: str | None = Query(default=None, max_length=80),
+) -> dict:
+    if not metrics or not transactions:
+        return {
+            "items": [],
+            "page": page,
+            "pageSize": pageSize,
+            "total": 0,
+            "datasetAvailable": False,
+            "message": (
+                "No trained holdout transaction file is available. No records "
+                "or predictions have been fabricated."
+            ),
+        }
+    filtered = transactions
+    if risk is not None:
+        filtered = [item for item in filtered if item["risk"] == risk]
+    if actualFraud is not None:
+        filtered = [
+            item for item in filtered if item["actualFraud"] is actualFraud
+        ]
+    if search:
+        normalized = search.casefold()
+        filtered = [
+            item
+            for item in filtered
+            if normalized in item["id"].casefold()
+            or normalized in str(item["rowNumber"])
+            or normalized in f'{item["amount"]:.2f}'
+        ]
+    total = len(filtered)
+    start = (page - 1) * pageSize
+    return {
+        "items": filtered[start : start + pageSize],
+        "page": page,
+        "pageSize": pageSize,
+        "total": total,
+        "datasetAvailable": True,
+        "message": (
+            f"Rows are from the untouched {metrics['testRows']:,}-row holdout "
+            "split. IDs are local row references; the source has no customer "
+            "or merchant identifiers."
+        ),
+    }
+
+
+@app.get("/model-api/transactions/{transaction_id}")
+def get_transaction(transaction_id: str) -> dict:
+    transaction = transactions_by_id.get(transaction_id)
+    if transaction is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    return transaction
+
+
+@app.post("/model-api/transactions/score")
+def score_transaction(payload: ScoreInput) -> dict:
+    if model is None or not metrics:
+        raise HTTPException(
+            status_code=503,
+            detail="No trained model is available. Scores are intentionally omitted.",
+        )
+    if set(payload.features) != set(PCA_FEATURES):
+        missing = sorted(set(PCA_FEATURES) - set(payload.features))
+        extra = sorted(set(payload.features) - set(PCA_FEATURES))
+        raise HTTPException(
+            status_code=422,
+            detail=f"Expected exactly V1-V28. Missing: {missing}; extra: {extra}.",
+        )
+    row = pd.DataFrame(
+        [
+            {
+                "Time": payload.time,
+                **payload.features,
+                "Amount": payload.amount,
+            }
+        ],
+        columns=FEATURE_COLUMNS,
+    )
+    probability = float(model.predict_proba(row)[0, 1])
+    return {
+        "fraudProbability": probability,
+        "risk": risk_for(probability),
+        "threshold": float(metrics["threshold"]),
+        "modelName": str(metrics["modelName"]),
+    }
+
+
+@app.get("/model-api/trends")
+def get_trends(buckets: int = Query(default=24, ge=4, le=48)) -> list[dict]:
+    if not transactions:
+        return []
+    max_time = max(float(item["time"]) for item in transactions)
+    width = max_time / buckets if max_time else 1.0
+    result = [
+        {
+            "bucket": index,
+            "timeStart": index * width,
+            "timeEnd": (index + 1) * width,
+            "legitimateCount": 0,
+            "fraudCount": 0,
+            "predictedHighRiskCount": 0,
+        }
+        for index in range(buckets)
+    ]
+    for item in transactions:
+        bucket = min(int(float(item["time"]) / width), buckets - 1)
+        if item["actualFraud"]:
+            result[bucket]["fraudCount"] += 1
+        else:
+            result[bucket]["legitimateCount"] += 1
+        if item["risk"] == "High":
+            result[bucket]["predictedHighRiskCount"] += 1
+    return result
+
+
+@app.get("/model-api/alerts", response_model=list[AlertCandidate])
+def get_alert_candidates(
+    limit: int = Query(default=100, ge=1, le=500),
+) -> list[dict]:
+    if not transactions:
+        return []
+    candidates = [item for item in transactions if item["risk"] == "High"]
+    candidates.sort(key=lambda item: item["fraudProbability"], reverse=True)
+    return [
+        {
+            "id": item["id"],
+            "transactionId": item["id"],
+            "risk": item["risk"],
+            "amount": item["amount"],
+            "fraudProbability": item["fraudProbability"],
+        }
+        for item in candidates[:limit]
+    ]

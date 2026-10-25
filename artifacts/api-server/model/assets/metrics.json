@@ -1,0 +1,29 @@
+{
+  "status": "ready",
+  "dataset": "OpenML 42175 mirror of Kaggle mlg-ulb/creditcardfraud",
+  "datasetRows": 284807,
+  "fraudRows": 492,
+  "trainRows": 227845,
+  "testRows": 56962,
+  "precision": 0.55,
+  "recall": 0.8979591836734694,
+  "f1Score": 0.6821705426356589,
+  "confusionMatrix": {
+    "trueNegative": 56792,
+    "falsePositive": 72,
+    "falseNegative": 10,
+    "truePositive": 88
+  },
+  "splitMethod": "Stratified 80/20 train/test split; random_state=42",
+  "smoteAppliedTo": "Training split only; holdout class prevalence unchanged",
+  "threshold": 0.5,
+  "modelName": "StandardScaler + SMOTE + HistGradientBoostingClassifier",
+  "message": "Metrics are measured on the untouched stratified holdout split. This benchmark is not a production payment-risk evaluation.",
+  "sourceMd5": "f9af8fd7966f2d2b8a3e5e67158a7757",
+  "randomState": 42,
+  "riskThresholds": {
+    "medium": 0.3,
+    "high": 0.7
+  },
+  "scikitLearnVersion": "1.9.1"
+}

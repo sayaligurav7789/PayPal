@@ -1,0 +1,626 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: FraudShield academic fraud-detection prototype API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: dashboard
+    description: Dashboard and model evaluation
+  - name: transactions
+    description: Kaggle benchmark transactions and model scoring
+  - name: rules
+    description: Configurable transaction policies
+  - name: lists
+    description: Allowlist and blocklist
+  - name: alerts
+    description: Model-generated risk alerts
+  - name: investigations
+    description: Transaction investigation queue
+  - name: audit
+    description: Change history
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+  /dashboard:
+    get:
+      operationId: getDashboard
+      tags: [dashboard]
+      summary: Get dashboard overview
+      responses:
+        "200":
+          description: Dashboard overview, with nullable model values when the dataset is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+  /model/metrics:
+    get:
+      operationId: getModelMetrics
+      tags: [dashboard]
+      summary: Get measured model evaluation metrics
+      responses:
+        "200":
+          description: Model evaluation status and metrics computed from the held-out test set
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelMetrics"
+  /analytics/trends:
+    get:
+      operationId: getFraudTrends
+      tags: [dashboard]
+      summary: Get fraud trend counts over dataset time
+      parameters:
+        - in: query
+          name: buckets
+          schema: { type: integer, minimum: 4, maximum: 48, default: 24 }
+      responses:
+        "200":
+          description: Counts grouped from actual dataset labels and model predictions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TrendPoint"
+  /transactions:
+    get:
+      operationId: listTransactions
+      tags: [transactions]
+      summary: List scored benchmark transactions
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1, default: 1 }
+        - in: query
+          name: pageSize
+          schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+        - in: query
+          name: risk
+          schema: { $ref: "#/components/schemas/RiskLevel" }
+        - in: query
+          name: actualFraud
+          schema: { type: boolean }
+        - in: query
+          name: search
+          schema: { type: string, maxLength: 80 }
+      responses:
+        "200":
+          description: Page of held-out dataset transactions with model predictions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransactionPage"
+  /transactions/{id}:
+    get:
+      operationId: getTransaction
+      tags: [transactions]
+      summary: Get a transaction and its anonymized feature values
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Transaction detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransactionDetail"
+        "404":
+          description: Transaction not found
+  /transactions/score:
+    post:
+      operationId: scoreTransaction
+      tags: [transactions]
+      summary: Score a transaction with the trained model
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScoreInput"
+      responses:
+        "200":
+          description: Model prediction and configured risk category
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScoreResult"
+        "503":
+          description: Dataset or trained model is not available
+  /rules:
+    get:
+      operationId: listRules
+      tags: [rules]
+      summary: List configured fraud rules
+      responses:
+        "200":
+          description: Fraud rules
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FraudRule"
+    post:
+      operationId: createRule
+      tags: [rules]
+      summary: Create a fraud rule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuleInput"
+      responses:
+        "201":
+          description: Rule created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FraudRule"
+  /rules/{id}:
+    patch:
+      operationId: updateRule
+      tags: [rules]
+      summary: Update a fraud rule
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuleUpdate"
+      responses:
+        "200":
+          description: Updated rule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FraudRule"
+        "404":
+          description: Rule not found
+    delete:
+      operationId: deleteRule
+      tags: [rules]
+      summary: Delete a fraud rule
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Rule deleted
+        "404":
+          description: Rule not found
+  /lists:
+    get:
+      operationId: listEntries
+      tags: [lists]
+      summary: List allowlist and blocklist entries
+      parameters:
+        - in: query
+          name: kind
+          schema: { $ref: "#/components/schemas/ListKind" }
+      responses:
+        "200":
+          description: List entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ListEntry"
+    post:
+      operationId: createListEntry
+      tags: [lists]
+      summary: Add an allowlist or blocklist entry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ListEntryInput"
+      responses:
+        "201":
+          description: Entry added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEntry"
+  /lists/{id}:
+    delete:
+      operationId: deleteListEntry
+      tags: [lists]
+      summary: Remove an allowlist or blocklist entry
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Entry deleted
+        "404":
+          description: Entry not found
+  /alerts:
+    get:
+      operationId: listAlerts
+      tags: [alerts]
+      summary: List alerts based on real model predictions
+      parameters:
+        - in: query
+          name: status
+          schema: { $ref: "#/components/schemas/AlertStatus" }
+      responses:
+        "200":
+          description: Model alerts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FraudAlert"
+  /alerts/{id}:
+    patch:
+      operationId: updateAlert
+      tags: [alerts]
+      summary: Acknowledge or resolve an alert
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AlertUpdate"
+      responses:
+        "200":
+          description: Updated alert
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FraudAlert"
+        "404":
+          description: Alert not found
+  /investigations:
+    get:
+      operationId: listInvestigations
+      tags: [investigations]
+      summary: List open and completed investigations
+      parameters:
+        - in: query
+          name: status
+          schema: { $ref: "#/components/schemas/InvestigationStatus" }
+      responses:
+        "200":
+          description: Investigation records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Investigation"
+    post:
+      operationId: createInvestigation
+      tags: [investigations]
+      summary: Open an investigation for a benchmark transaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InvestigationInput"
+      responses:
+        "201":
+          description: Investigation created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Investigation"
+  /investigations/{id}:
+    patch:
+      operationId: updateInvestigation
+      tags: [investigations]
+      summary: Update investigation status, assignment, or notes
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InvestigationUpdate"
+      responses:
+        "200":
+          description: Updated investigation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Investigation"
+        "404":
+          description: Investigation not found
+  /audit-logs:
+    get:
+      operationId: listAuditLogs
+      tags: [audit]
+      summary: List recent system and operator actions
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        "200":
+          description: Audit events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AuditLog"
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status: { type: string }
+      required: [status]
+    RiskLevel:
+      type: string
+      enum: [Low, Medium, High]
+    ListKind:
+      type: string
+      enum: [allow, block]
+    AlertStatus:
+      type: string
+      enum: [open, acknowledged, resolved]
+    InvestigationStatus:
+      type: string
+      enum: [open, in_review, resolved]
+    ConfusionMatrix:
+      type: object
+      properties:
+        trueNegative: { type: integer }
+        falsePositive: { type: integer }
+        falseNegative: { type: integer }
+        truePositive: { type: integer }
+      required: [trueNegative, falsePositive, falseNegative, truePositive]
+    ModelMetrics:
+      type: object
+      properties:
+        status: { type: string, enum: [ready, unavailable] }
+        dataset: { type: string }
+        datasetRows: { type: ["integer", "null"] }
+        fraudRows: { type: ["integer", "null"] }
+        testRows: { type: ["integer", "null"] }
+        trainRows: { type: ["integer", "null"] }
+        precision: { type: ["number", "null"] }
+        recall: { type: ["number", "null"] }
+        f1Score: { type: ["number", "null"] }
+        confusionMatrix:
+          anyOf:
+            - $ref: "#/components/schemas/ConfusionMatrix"
+            - type: "null"
+        splitMethod: { type: ["string", "null"] }
+        smoteAppliedTo: { type: ["string", "null"] }
+        threshold: { type: ["number", "null"] }
+        modelName: { type: ["string", "null"] }
+        message: { type: ["string", "null"] }
+      required: [status, dataset, datasetRows, fraudRows, testRows, trainRows, precision, recall, f1Score, confusionMatrix, splitMethod, smoteAppliedTo, threshold, modelName, message]
+    DashboardSummary:
+      type: object
+      properties:
+        modelStatus: { type: string, enum: [ready, unavailable] }
+        datasetRows: { type: ["integer", "null"] }
+        fraudRows: { type: ["integer", "null"] }
+        testRows: { type: ["integer", "null"] }
+        precision: { type: ["number", "null"] }
+        recall: { type: ["number", "null"] }
+        f1Score: { type: ["number", "null"] }
+        confusionMatrix:
+          anyOf:
+            - $ref: "#/components/schemas/ConfusionMatrix"
+            - type: "null"
+        highRiskCount: { type: ["integer", "null"] }
+        openAlertCount: { type: integer }
+        openInvestigationCount: { type: integer }
+        message: { type: ["string", "null"] }
+      required: [modelStatus, datasetRows, fraudRows, testRows, precision, recall, f1Score, confusionMatrix, highRiskCount, openAlertCount, openInvestigationCount, message]
+    TrendPoint:
+      type: object
+      properties:
+        bucket: { type: integer }
+        timeStart: { type: number }
+        timeEnd: { type: number }
+        legitimateCount: { type: integer }
+        fraudCount: { type: integer }
+        predictedHighRiskCount: { type: integer }
+      required: [bucket, timeStart, timeEnd, legitimateCount, fraudCount, predictedHighRiskCount]
+    Transaction:
+      type: object
+      properties:
+        id: { type: string }
+        rowNumber: { type: integer }
+        time: { type: number }
+        amount: { type: number }
+        actualFraud: { type: boolean }
+        fraudProbability: { type: number, minimum: 0, maximum: 1 }
+        risk: { $ref: "#/components/schemas/RiskLevel" }
+      required: [id, rowNumber, time, amount, actualFraud, fraudProbability, risk]
+    TransactionPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Transaction" }
+        page: { type: integer }
+        pageSize: { type: integer }
+        total: { type: integer }
+        datasetAvailable: { type: boolean }
+        message: { type: ["string", "null"] }
+      required: [items, page, pageSize, total, datasetAvailable, message]
+    TransactionDetail:
+      allOf:
+        - $ref: "#/components/schemas/Transaction"
+        - type: object
+          properties:
+            features:
+              type: object
+              additionalProperties: { type: number }
+          required: [features]
+    ScoreInput:
+      type: object
+      properties:
+        transactionId:
+          type: string
+          description: Optional local benchmark row reference used for allow/block list matching
+        time: { type: number, minimum: 0 }
+        amount: { type: number, minimum: 0 }
+        features:
+          type: object
+          description: Exact V1 through V28 values from the dataset
+          additionalProperties: { type: number }
+      required: [time, amount, features]
+    ScoreResult:
+      type: object
+      properties:
+        fraudProbability: { type: number, minimum: 0, maximum: 1 }
+        risk: { $ref: "#/components/schemas/RiskLevel" }
+        threshold: { type: number }
+        modelName: { type: string }
+        policyDecision: { type: string, enum: [approve, review, decline] }
+        matchedRules:
+          type: array
+          items: { type: string }
+        listMatch:
+          type: ["string", "null"]
+          enum: [allow, block, null]
+      required: [fraudProbability, risk, threshold, modelName, policyDecision, matchedRules, listMatch]
+    FraudRule:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        field: { type: string, enum: [amount, fraudProbability, time] }
+        operator: { type: string, enum: [gt, gte, lt, lte] }
+        value: { type: number }
+        action: { type: string, enum: [approve, review, decline] }
+        enabled: { type: boolean }
+        createdAt: { type: string, format: date-time }
+      required: [id, name, field, operator, value, action, enabled, createdAt]
+    RuleInput:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        field: { type: string, enum: [amount, fraudProbability, time] }
+        operator: { type: string, enum: [gt, gte, lt, lte] }
+        value: { type: number, minimum: 0 }
+        action: { type: string, enum: [approve, review, decline] }
+        enabled: { type: boolean }
+      required: [name, field, operator, value, action]
+    RuleUpdate:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        value: { type: number, minimum: 0 }
+        action: { type: string, enum: [approve, review, decline] }
+        enabled: { type: boolean }
+    ListEntry:
+      type: object
+      properties:
+        id: { type: string }
+        kind: { $ref: "#/components/schemas/ListKind" }
+        value: { type: string }
+        reason: { type: ["string", "null"] }
+        createdAt: { type: string, format: date-time }
+      required: [id, kind, value, reason, createdAt]
+    ListEntryInput:
+      type: object
+      properties:
+        kind: { $ref: "#/components/schemas/ListKind" }
+        value: { type: string, minLength: 1, maxLength: 200 }
+        reason: { type: ["string", "null"] }
+      required: [kind, value]
+    FraudAlert:
+      type: object
+      properties:
+        id: { type: string }
+        transactionId: { type: string }
+        risk: { $ref: "#/components/schemas/RiskLevel" }
+        amount: { type: number }
+        fraudProbability: { type: number }
+        status: { $ref: "#/components/schemas/AlertStatus" }
+        createdAt: { type: string, format: date-time }
+      required: [id, transactionId, risk, amount, fraudProbability, status, createdAt]
+    AlertUpdate:
+      type: object
+      properties:
+        status: { $ref: "#/components/schemas/AlertStatus" }
+      required: [status]
+    Investigation:
+      type: object
+      properties:
+        id: { type: string }
+        transactionId: { type: string }
+        status: { $ref: "#/components/schemas/InvestigationStatus" }
+        priority: { type: string, enum: [low, medium, high] }
+        assignee: { type: ["string", "null"] }
+        notes: { type: ["string", "null"] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [id, transactionId, status, priority, assignee, notes, createdAt, updatedAt]
+    InvestigationInput:
+      type: object
+      properties:
+        transactionId: { type: string, minLength: 1 }
+        priority: { type: string, enum: [low, medium, high] }
+        assignee: { type: ["string", "null"] }
+        notes: { type: ["string", "null"] }
+      required: [transactionId, priority]
+    InvestigationUpdate:
+      type: object
+      properties:
+        status: { $ref: "#/components/schemas/InvestigationStatus" }
+        priority: { type: string, enum: [low, medium, high] }
+        assignee: { type: ["string", "null"] }
+        notes: { type: ["string", "null"] }
+    AuditLog:
+      type: object
+      properties:
+        id: { type: string }
+        action: { type: string }
+        entity: { type: string }
+        entityId: { type: ["string", "null"] }
+        summary: { type: string }
+        createdAt: { type: string, format: date-time }
+      required: [id, action, entity, entityId, summary, createdAt]

@@ -1,0 +1,118 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum FraudRuleField {
+  amount
+  fraudProbability
+  time
+}
+
+enum FraudRuleOperator { 
+  gt
+  gte
+  lt
+  lte
+}
+
+enum FraudRuleAction {
+  approve
+  review
+  decline
+}
+
+enum ListKind {
+  allow
+  block
+}
+
+enum RiskLevel {
+  Low
+  Medium
+  High
+}
+
+enum AlertStatus {
+  open
+  acknowledged
+  resolved
+}
+
+enum InvestigationStatus {
+  open
+  in_review
+  resolved
+}
+
+enum InvestigationPriority {
+  low
+  medium
+  high
+}
+
+model FraudRule {
+  id        String           @id @default(cuid())
+  name      String
+  field     FraudRuleField
+  operator  FraudRuleOperator
+  value     Float
+  action    FraudRuleAction
+  enabled   Boolean          @default(true)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  @@index([enabled])
+}
+
+model ListEntry {
+  id        String   @id @default(cuid())
+  kind      ListKind
+  value     String
+  reason    String?
+  createdAt DateTime @default(now())
+
+  @@unique([kind, value])
+}
+
+model FraudAlert {
+  id               String     @id @default(cuid())
+  transactionId    String     @unique
+  risk             RiskLevel
+  amount           Float
+  fraudProbability Float
+  status           AlertStatus @default(open)
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  @@index([status, createdAt])
+}
+
+model Investigation {
+  id            String               @id @default(cuid())
+  transactionId String               @unique
+  status        InvestigationStatus  @default(open)
+  priority      InvestigationPriority
+  assignee      String?
+  notes         String?
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  @@index([status, priority])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  action    String
+  entity    String
+  entityId  String?
+  summary   String
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([entity, entityId])
+}

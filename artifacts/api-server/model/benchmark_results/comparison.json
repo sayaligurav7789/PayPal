@@ -1,0 +1,70 @@
+{
+  "datasetRows": 284807,
+  "fraudRows": 492,
+  "trainRows": 227845,
+  "testRows": 56962,
+  "split": "Stratified 80/20, random_state=42",
+  "smote": "Training split only",
+  "threshold": 0.5,
+  "scikitLearnVersion": "1.9.1",
+  "rankingMetric": "PR-AUC (average precision)",
+  "results": [
+    {
+      "model": "Random Forest",
+      "precision": 0.8804347826086957,
+      "recall": 0.826530612244898,
+      "f1": 0.8526315789473684,
+      "pr_auc": 0.8721241233653418,
+      "true_negative": 56853,
+      "false_positive": 11,
+      "false_negative": 17,
+      "true_positive": 81,
+      "train_seconds": 181.772,
+      "predict_seconds": 0.318,
+      "threshold": 0.5
+    },
+    {
+      "model": "HistGradientBoosting",
+      "precision": 0.55,
+      "recall": 0.8979591836734694,
+      "f1": 0.6821705426356589,
+      "pr_auc": 0.8680537171340186,
+      "true_negative": 56792,
+      "false_positive": 72,
+      "false_negative": 10,
+      "true_positive": 88,
+      "train_seconds": 10.242,
+      "predict_seconds": 0.246,
+      "threshold": 0.5
+    },
+    {
+      "model": "XGBoost",
+      "precision": 0.25835866261398177,
+      "recall": 0.8673469387755102,
+      "f1": 0.3981264637002342,
+      "pr_auc": 0.8357443170130257,
+      "true_negative": 56620,
+      "false_positive": 244,
+      "false_negative": 13,
+      "true_positive": 85,
+      "train_seconds": 8.29,
+      "predict_seconds": 0.076,
+      "threshold": 0.5
+    },
+    {
+      "model": "Gradient Boosting",
+      "precision": 0.11335012594458438,
+      "recall": 0.9183673469387755,
+      "f1": 0.20179372197309417,
+      "pr_auc": 0.7410142982861295,
+      "true_negative": 56160,
+      "false_positive": 704,
+      "false_negative": 8,
+      "true_positive": 90,
+      "train_seconds": 1081.689,
+      "predict_seconds": 0.175,
+      "threshold": 0.5
+    }
+  ],
+  "note": "Benchmark only. Existing production model artifacts were not modified."
+}
